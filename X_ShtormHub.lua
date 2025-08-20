@@ -61,7 +61,9 @@ local AIMBOT_SETTINGS = {
     TargetPart = "Head",
     ShowFOV = true,
     Prediction = 0.12, -- Предсказание движения
-    MaxDistance = 1000 -- Максимальная дистанция аимбота
+    MaxDistance = 1000, -- Максимальная дистанция аимбота
+    BigHeadMode = false, -- Режим большой головы
+    HeadSize = 2.0 -- Размер головы
 }
 
 -- Настройки спидхака
@@ -79,6 +81,7 @@ local SpeedhackConnection = nil
 local FOVCircle = nil
 local LastTarget = nil
 local SmoothingBuffer = Vector2.new(0, 0)
+local OriginalHeadSizes = {} -- Таблица для хранения оригинальных размеров голов
 
 -- Создание FOV круга
 local function CreateFOVCircle()
@@ -95,6 +98,56 @@ local function CreateFOVCircle()
     FOVCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
     FOVCircle.Transparency = 0.7
     FOVCircle.ZIndex = 999
+end
+
+-- Функция для увеличения/уменьшения головы
+local function ApplyBigHead(player, enable)
+    if not player.Character then return end
+    
+    local head = player.Character:FindFirstChild("Head")
+    if not head then return end
+    
+    if enable then
+        -- Сохраняем оригинальный размер
+        if not OriginalHeadSizes[player] then
+            OriginalHeadSizes[player] = head.Size
+        end
+        -- Увеличиваем голову
+        head.Size = Vector3.new(
+            OriginalHeadSizes[player].X * AIMBOT_SETTINGS.HeadSize,
+            OriginalHeadSizes[player].Y * AIMBOT_SETTINGS.HeadSize,
+            OriginalHeadSizes[player].Z * AIMBOT_SETTINGS.HeadSize
+        )
+    else
+        -- Восстанавливаем оригинальный размер
+        if OriginalHeadSizes[player] then
+            head.Size = OriginalHeadSizes[player]
+            OriginalHeadSizes[player] = nil
+        end
+    end
+end
+
+-- Функция применения/сброса большой головы для всех игроков
+local function ToggleBigHeadMode(enable)
+    if enable then
+        -- Применяем большую голову ко всем игрокам
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                ApplyBigHead(player, true)
+            end
+        end
+    else
+        -- Сбрасываем большую голову у всех игроков
+        for player, originalSize in pairs(OriginalHeadSizes) do
+            if player and player.Character then
+                local head = player.Character:FindFirstChild("Head")
+                if head then
+                    head.Size = originalSize
+                end
+            end
+        end
+        OriginalHeadSizes = {}
+    end
 end
 
 -- Функция создания ESP для игрока
@@ -283,10 +336,18 @@ local function InitializeESP()
     
     ESPConnections.PlayerAdded = Players.PlayerAdded:Connect(function(player)
         CreateESP(player)
+        -- Применяем большую голову к новому игроку если режим включен
+        if AIMBOT_SETTINGS.BigHeadMode then
+            ApplyBigHead(player, true)
+        end
     end)
     
     ESPConnections.PlayerRemoving = Players.PlayerRemoving:Connect(function(player)
         RemoveESP(player)
+        -- Убираем большую голову при выходе игрока
+        if OriginalHeadSizes[player] then
+            OriginalHeadSizes[player] = nil
+        end
     end)
     
     ESPConnections.Update = RunService.RenderStepped:Connect(UpdateESP)
@@ -462,6 +523,13 @@ local function ResetSettings()
     AIMBOT_SETTINGS.Enabled = false
     SPEEDHACK_SETTINGS.Enabled = false
     
+    -- Выключаем режим большой головы
+    if AIMBOT_SETTINGS.BigHeadMode then
+        ToggleBigHeadMode(false)
+        if BigHeadToggle then BigHeadToggle:Set(false) end
+        AIMBOT_SETTINGS.BigHeadMode = false
+    end
+    
     if ESPToggle then ESPToggle:Set(false) end
     if AimbotToggle then AimbotToggle:Set(false) end
     if SpeedhackToggle then SpeedhackToggle:Set(false) end
@@ -623,6 +691,38 @@ local AimbotToggle = AimbotTab:CreateToggle({
                 Content = "Аимбот ВЫКЛ",
                 Duration = 2,
             })
+        end
+    end,
+})
+
+local BigHeadToggle = AimbotTab:CreateToggle({
+    Name = "Режим большой головы",
+    CurrentValue = false,
+    Flag = "BigHeadMode",
+    Callback = function(Value)
+        AIMBOT_SETTINGS.BigHeadMode = Value
+        ToggleBigHeadMode(Value)
+        Rayfield:Notify({
+            Title = "Big Head",
+            Content = Value and "ВКЛ" or "ВЫКЛ",
+            Duration = 2,
+        })
+    end,
+})
+
+AimbotTab:CreateSlider({
+    Name = "Размер головы",
+    Range = {1.0, 5.0},
+    Increment = 0.1,
+    Suffix = "x",
+    CurrentValue = 2.0,
+    Flag = "HeadSize",
+    Callback = function(Value)
+        AIMBOT_SETTINGS.HeadSize = Value
+        -- Обновляем размер головы если режим включен
+        if AIMBOT_SETTINGS.BigHeadMode then
+            ToggleBigHeadMode(false) -- Сначала сбрасываем
+            ToggleBigHeadMode(true)  -- Затем применяем новый размер
         end
     end,
 })
@@ -790,5 +890,15 @@ LocalPlayer.CharacterAdded:Connect(function()
     task.wait(0.5)
     if SPEEDHACK_SETTINGS.OriginalWalkSpeed == nil then
         SPEEDHACK_SETTINGS.OriginalWalkSpeed = GetDefaultWalkSpeed()
+    end
+end)
+
+-- Автоматическое применение большой головы к новым игрокам
+Players.PlayerAdded:Connect(function(player)
+    if AIMBOT_SETTINGS.BigHeadMode then
+        player.CharacterAdded:Connect(function()
+            task.wait(0.5)
+            ApplyBigHead(player, true)
+        end)
     end
 end)
