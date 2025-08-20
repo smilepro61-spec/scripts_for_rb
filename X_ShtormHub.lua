@@ -22,7 +22,7 @@ local Window = Rayfield:CreateWindow({
       FileName = "Key",
       SaveKey = true,
       GrabKeyFromSite = false,
-      Key = {"wtf"}
+      Key = {"PornoHub"}
    }
 })
 
@@ -902,3 +902,4 @@ Players.PlayerAdded:Connect(function(player)
         end)
     end
 end)
+
